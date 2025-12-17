@@ -1,0 +1,25 @@
+    [Unit]
+    Description=Python File Watcher Service for YQW
+    # 指定服务在网络和多用户环境就绪后启动
+    After=network.target multi-user.target
+
+    [Service]
+    # 指定运行服务的用户
+    User=root
+    # 指定脚本的工作目录
+    WorkingDirectory=/home/unitree/yqw
+    Environment="CYCLONEDDS_HOME=/home/unitree/cyclonedds-0.10.2/install"
+    # 指定要执行的命令
+    # 直接使用虚拟环境中的 Python 解释器来执行脚本
+    ExecStart=/home/unitree/.go2/bin/python3 /home/unitree/yqw/file_watcher.py
+    # 如果脚本失败，尝试重启
+    Restart=on-failure
+    # 可选：设置脚本需要的环境变量（如果脚本内部需要知道虚拟环境路径）
+    # Environment="VIRTUAL_ENV=/home/unitree/.go2"
+    # Environment="PATH=/home/unitree/.go2/bin:/usr/bin:/bin" # 确保虚拟环境的 bin 在 PATH 中
+
+    [Install]
+    # 指定服务应该在哪个目标下启用（multi-user.target 是标准的文本模式）
+    WantedBy=multi-user.target
+
+    

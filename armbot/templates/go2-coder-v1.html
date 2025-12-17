@@ -1,0 +1,537 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI机器狗编程控制台</title>
+    <!-- 添加 CodeMirror CSS -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/codemirror.min.css">
+    <style>
+        :root {
+            --primary-color: #3498db;
+            --secondary-color: #2980b9;
+            --accent-color: #e74c3c;
+            --light-color: #ecf0f1;
+            --dark-color: #2c3e50;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #f5f7fa;
+            color: #333;
+            line-height: 1.6;
+        }
+
+        /* 顶栏样式 */
+        .header {
+            background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
+            color: white;
+            padding: 1rem 2rem;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .header-content {
+            max-width: 1200px;
+            width: 100%;
+            margin: 0 auto;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .logo {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .logo-icon {
+            font-size: 1.8rem;
+        }
+
+        .header h1 {
+            font-size: 1.5rem;
+            font-weight: 600;
+        }
+
+        .header p {
+            font-size: 0.9rem;
+            opacity: 0.9;
+        }
+
+        /* 主内容区 */
+        .main-container {
+            display: flex;
+            max-width: 1200px;
+            margin: 0 auto;
+            height: calc(100vh - 95px);
+            background-color: white;
+            box-shadow: 0 0 20px rgba(0, 0, 0, 0.05);
+        }
+
+        /* 左侧手册栏 */
+        .manual-panel {
+            flex: 0 0 35%;
+            padding: 1.5rem;
+            overflow-y: auto;
+            border-right: 1px solid #e0e0e0;
+            background-color: white;
+            scrollbar-width: none;
+            -ms-overflow-style: none;
+        }
+
+        .manual-panel::-webkit-scrollbar {
+            display: none;
+            /* Chrome/Safari/Opera */
+            width: 0 !important;
+            /* 彻底移除滚动条占位 */
+        }
+
+        .manual-header {
+            display: flex;
+            align-items: center;
+            margin-bottom: 1.5rem;
+            gap: 10px;
+        }
+
+        .robot-icon {
+            width: 50px;
+            height: 50px;
+        }
+
+        .section {
+            margin-bottom: 2rem;
+        }
+
+        .section-title {
+            color: var(--primary-color);
+            margin-bottom: 1rem;
+            padding-bottom: 0.5rem;
+            border-bottom: 2px solid var(--light-color);
+            font-size: 1.2rem;
+        }
+
+        .command-card {
+            background-color: var(--light-color);
+            padding: 0.8rem;
+            border-radius: 6px;
+            margin-bottom: 0.8rem;
+            transition: all 0.2s;
+        }
+
+        .command-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+        }
+
+        .command {
+            font-family: 'Consolas', monospace;
+            font-weight: bold;
+            color: var(--dark-color);
+            margin-bottom: 0.3rem;
+        }
+
+        .command-desc {
+            font-size: 0.9rem;
+            color: #555;
+        }
+
+        .example {
+            background-color: #f8f9fa;
+            border-left: 4px solid var(--primary-color);
+            padding: 1rem;
+            margin: 1rem 0;
+            border-radius: 0 4px 4px 0;
+        }
+
+        .example-title {
+            font-weight: 600;
+            margin-bottom: 0.5rem;
+            color: var(--dark-color);
+        }
+
+        /* 右侧编程区 */
+        .code-panel {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            background-color: #f8fafc;
+        }
+
+        .editor-header {
+            padding: 1rem 1.5rem;
+            background-color: white;
+            border-bottom: 1px solid #e0e0e0;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .editor-title {
+            font-weight: 600;
+            color: var(--dark-color);
+        }
+
+        .code-editor {
+            flex: 1;
+            padding: 1.5rem;
+        }
+
+        textarea {
+            width: 100%;
+            height: 100%;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            padding: 1rem;
+            font-family: 'Consolas', monospace;
+            font-size: 14px;
+            line-height: 1.5;
+            resize: none;
+            background-color: white;
+            box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.1);
+            transition: border 0.2s;
+        }
+
+        textarea:focus {
+            outline: none;
+            border-color: var(--primary-color);
+            box-shadow: 0 0 0 2px rgba(52, 152, 219, 0.2);
+        }
+
+        /* 控制按钮区 */
+        .controls {
+            padding: 1rem;
+            background-color: white;
+            border-top: 1px solid #e0e0e0;
+            text-align: right;
+        }
+
+        .btn {
+            padding: 0.6rem 1.5rem;
+            border-radius: 6px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s;
+            border: none;
+        }
+
+        .btn-run {
+            background-color: var(--accent-color);
+            color: white;
+        }
+
+        .btn-run:hover {
+            background-color: #c0392b;
+            transform: translateY(-1px);
+            box-shadow: 0 2px 8px rgba(231, 76, 60, 0.3);
+        }
+
+        .header-info {
+            padding-top: 10px;
+            line-height: 48px;
+        }
+        .iframe{
+            width:100%;
+            height:100%;
+            border:none
+        }
+
+        /* 响应式设计 */
+        @media (max-width: 768px) {
+            .main-container {
+                flex-direction: column;
+                height: auto;
+            }
+
+            .manual-panel {
+                border-right: none;
+                border-bottom: 1px solid #e0e0e0;
+            }
+        }
+        /* 添加 CodeMirror 样式 */
+        .CodeMirror {
+            border: 1px solid #ddd;
+            height: 100%; /* 填充 .code-editor 区域 */
+            font-size: 14px;
+            line-height: 1.5;
+            box-sizing: border-box;
+        }
+        /* 只读区域样式 */
+        .readonly-section {
+            color: black; /* 将颜色改为黑色 */
+            cursor: not-allowed;
+        }
+        .readonly-line-background {
+            background-color: #f0f0f0; /* 浅灰色背景 */
+        }
+        /* 上传消息样式 */
+        #upload-message {
+            margin-top: 10px;
+            padding: 8px 15px;
+            border-radius: 4px;
+            display: none; /* 默认隐藏 */
+            text-align: left;
+            font-size: 0.9em;
+        }
+        .success { background-color: #d4edda; color: #155724; border: 1px solid #c3e6cb; display: block !important; }
+        .error { background-color: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; display: block !important; }
+    </style>
+    <!-- 添加 CodeMirror JS -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/codemirror.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/mode/python/python.min.js"></script>
+</head>
+
+<body>
+    <!-- 顶栏 -->
+    <header class="header">
+        <div class="header-content">
+            <div class="logo">
+                <span class="logo-icon"><img src="/static/logoB.png" width="50px" /></span>
+                <div>
+                    <h1>AI机器狗编程体验</h1>
+                    <p>编写代码控制机器狗，创造属于你的舞蹈！</p>
+                </div>
+            </div>
+            <div class="header-info">
+                <img src="/static/dog.png" width="50px" style="float:left;margin-right:15px;    margin-top: 1px;" />
+                <small>上海市中小学人工智能科普展台</small>
+            </div>
+        </div>
+    </header>
+
+    <!-- 主内容区 -->
+    <main class="main-container">
+        <!-- 左侧手册栏 -->
+        <section class="manual-panel">
+            <div class="manual-header">
+                <img src="https://cdn-icons-png.flaticon.com/512/4712/4712035.png" alt="机器狗" class="robot-icon">
+                <h2>机器狗编程手册</h2>
+            </div>
+
+            <div class="section">
+                <h3 class="section-title">基本动作指令</h3>
+
+                <div class="command-card">
+                    <div class="command">sport_client.StandUp()</div>
+                    <p class="command-desc">让机器狗从趴下状态站起来</p>
+                </div>
+
+                <div class="command-card">
+                    <div class="command">sport_client.Hello()</div>
+                    <p class="command-desc">机器狗会伸出前脚向你打招呼</p>
+                </div>
+
+                <div class="command-card">
+                    <div class="command">sport_client.StandDown()</div>
+                    <p class="command-desc">让机器狗从站立状态趴下</p>
+                </div>
+
+                <div class="command-card">
+                    <div class="command">sport_client.Sit()</div>
+                    <p class="command-desc">让机器狗坐下</p>
+                </div>
+
+                <div class="command-card">
+                    <div class="command">sport_client.Stretch()</div>
+                    <p class="command-desc">机器狗会伸个懒腰</p>
+                </div>
+            </div>
+
+            <div class="section">
+                <h3 class="section-title">编程示例</h3>
+
+                <div class="example">
+                    <div class="example-title">示例1：简单打招呼</div>
+                    <pre>sport_client.StandUp()
+sport_client.Hello()
+sport_client.Sit()</pre>
+                </div>
+
+                <div class="example">
+                    <div class="example-title">示例2：晨练程序</div>
+                    <pre>sport_client.StandUp()
+sport_client.Stretch()
+sport_client.Hello()
+sport_client.StandDown()</pre>
+                </div>
+            </div>
+
+            <div class="section">
+                <h3 class="section-title">使用说明</h3>
+                <ol style="padding-left: 1.2rem;">
+                    <li>在右侧编辑区编写你的程序</li>
+                    <li>每行写一个指令，按顺序执行</li>
+                    <li>点击"运行程序"按钮让机器狗执行</li>
+                    <li>观察机器狗的动作效果</li>
+                    <li>可以尝试组合不同的指令创造新动作</li>
+                </ol>
+            </div>
+        </section>
+
+        <!-- 右侧编程区 -->
+        <section class="code-panel">
+            <div class="editor-header">
+                <div class="editor-title">编程区</div>
+                <div>
+                    <small>试试编写你的第一个程序吧！</small>
+                </div>
+            </div>
+
+            <div class="code-editor">
+                <!-- 替换 iframe 为 textarea -->
+                <textarea id="code-area">import time
+import sys
+from unitree_sdk2py.core.channel import ChannelSubscriber, ChannelFactoryInitialize
+from unitree_sdk2py.idl.default import unitree_go_msg_dds__SportModeState_
+from unitree_sdk2py.idl.unitree_go.msg.dds_ import SportModeState_
+from unitree_sdk2py.go2.sport.sport_client import (
+    SportClient,
+    PathPoint,
+    SPORT_PATH_POINT_SIZE,
+)
+import math
+from dataclasses import dataclass
+
+# --------------- 在下面添加你的动作---------------
+def act(sport_client):
+    """
+    在这里编写你的动作编排代码。
+    你可以调用 sport_client 提供的各种方法来控制机器人。
+    """
+    print("开始执行动作编排...")
+    print("WARNING: 请确保机器狗周围没有障碍物。")
+    #sport_client.Stretch()  # 示例动作：伸展
+    #time.sleep(2)
+
+
+if __name__ == "__main__":
+
+    ChannelFactoryInitialize(0, 'eth0')
+    sport_client = SportClient()
+    sport_client.SetTimeout(10.0)
+    sport_client.Init()
+
+    act(sport_client)
+# -------------------------------------------------</textarea>
+            </div>
+
+            <div class="controls">
+                <!-- 添加用于显示上传消息的 div -->
+                <div id="upload-message"></div>
+                <button class="btn btn-run" id="run-button">运行程序</button>
+            </div>
+        </section>
+    </main>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function () {
+            const runButton = document.getElementById('run-button');
+            const messageDiv = document.getElementById('upload-message'); // 获取消息显示区域
+
+            // 初始化 CodeMirror 编辑器
+            var editor = CodeMirror.fromTextArea(document.getElementById("code-area"), {
+                lineNumbers: true,
+                mode: "python",
+                
+                indentUnit: 4,
+                smartIndent: true,
+                tabSize: 4,
+                indentWithTabs: false,
+                lineWrapping: true
+            });
+
+            // --- 使代码只读 ---
+            const readOnlyBeforeLines = 21; // `def act(sport_client):` 之前的行数 (0 到 12)
+            const editableStartLine = 22;   // `def act(sport_client):` 开始行 (0-indexed)
+            const editableEndLine = 24;     // `act` 函数定义的结束行 (0-indexed, 在 if __name__ == "__main__": 之前)
+            const readOnlyAfterStartLine = 25; // `if __name__ == "__main__":` 开始行 (0-indexed)
+
+            // 标记 act 函数之前的代码为只读
+            editor.markText(
+                {line: 0, ch: 0},
+                {line: readOnlyBeforeLines, ch: 0}, // 标记到第13行的开头
+                { readOnly: true, className: 'readonly-section' }
+            );
+
+            // 标记 act 函数之后的代码为只读
+            editor.markText(
+                {line: readOnlyAfterStartLine, ch: 0}, // 从第22行开始
+                {line: editor.lineCount(), ch: 0},   // 标记到文件末尾
+                { readOnly: true, className: 'readonly-section' }
+            );
+
+            // --- 为只读行添加背景色 ---
+            // act 之前的只读行
+            for (let i = 0; i < readOnlyBeforeLines; i++) {
+                editor.addLineClass(i, 'wrap', 'readonly-line-background');
+            }
+             // act 之后的只读行
+            for (let i = readOnlyAfterStartLine; i < editor.lineCount(); i++) {
+                 if (editor.getLineHandle(i)) { // 检查行是否存在
+                    editor.addLineClass(i, 'wrap', 'readonly-line-background');
+                 }
+            }
+            // --- 结束 ---
+
+            // 将光标移动到可编辑区域 (act 函数内部)
+            // 移动到 print("开始执行动作编排...") 这一行的开头 (第18行, 0-indexed)
+            editor.setCursor({line: editableStartLine + 5, ch: 4}); // 保留缩进
+
+            // 移除旧的示例点击和验证逻辑
+
+            // 更新运行按钮点击事件
+            runButton.addEventListener('click', async function () { // 使用 async
+                const code = editor.getValue(); // 从 CodeMirror 获取代码
+                messageDiv.textContent = '正在上传...';
+                messageDiv.className = ''; // 清除之前的样式
+
+                runButton.disabled = true;
+                runButton.textContent = '上传中...';
+
+                try {
+                    const response = await fetch('/upload', {
+                        method: 'POST',
+                        headers: {
+                            // Flask 后端期望的是 application/x-www-form-urlencoded
+                            'Content-Type': 'application/x-www-form-urlencoded',
+                        },
+                        // 需要将代码编码后作为 'code' 参数发送
+                        body: 'code=' + encodeURIComponent(code)
+                    });
+
+                    const result = await response.json();
+
+                    if (response.ok) {
+                        messageDiv.textContent = '成功：' + result.message;
+                        messageDiv.className = 'success';
+                        // 可以在这里添加发送到机器狗的确认信息，如果需要的话
+                        // alert('程序已发送到机器狗！请观察机器狗的动作。');
+                    } else {
+                        messageDiv.textContent = '错误：' + (result.error || '上传失败');
+                        messageDiv.className = 'error';
+                    }
+                } catch (error) {
+                    console.error('上传过程中发生错误:', error);
+                    messageDiv.textContent = '错误：无法连接到服务器或发生未知错误。';
+                    messageDiv.className = 'error';
+                } finally {
+                    // 无论成功或失败，都恢复按钮状态
+                    runButton.disabled = false;
+                    runButton.textContent = '运行程序';
+                }
+            });
+        });
+    </script>
+</body>
+
+</html>
