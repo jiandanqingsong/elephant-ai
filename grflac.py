@@ -7,6 +7,8 @@ import os
 import sys
 import json
 import contextlib
+import queue
+import threading
 from io import StringIO
 
 # 引入Agent相关模块
@@ -58,7 +60,7 @@ def capture_stdout():
 def save_and_process_audio(audio):
     """录音完成后自动保存为FLAC文件"""
     if audio is None:
-        return "❌ 未检测到音频输入", None
+        return None
     
     sample_rate, audio_data = audio
     
@@ -71,11 +73,12 @@ def save_and_process_audio(audio):
                  subtype='PCM_16')
         
         duration = len(audio_data) / sample_rate
-        message = f"✅ 录音已保存: {FIXED_FLAC_FILE}\n时长: {duration:.1f}秒, 采样率: {sample_rate}Hz"
+        print(f"✅ 录音已保存: {FIXED_FLAC_FILE}\n时长: {duration:.1f}秒, 采样率: {sample_rate}Hz")
         
-        return message, FIXED_FLAC_FILE
+        return FIXED_FLAC_FILE
     except Exception as e:
-        return f"❌ 保存失败: {str(e)}", None
+        print(f"❌ 保存失败: {str(e)}")
+        return None
 
 def copy_to_recording():
     """复制文件到当前目录的Recording.flac"""
@@ -95,28 +98,149 @@ def copy_to_recording():
     except Exception as e:
         return f"❌ 复制失败: {str(e)}"
 
+# 工具名称和参数的中英文映射
+TOOL_TRANSLATIONS = {
+    "move_to": "移动到",
+    "grab_object": "抓取物体",
+    "show_object": "展示物体"
+}
+
+ARG_TRANSLATIONS = {
+    "target_coord": "目标坐标",
+    "target_height": "目标高度",
+    "object_name": "物体名称"
+}
+
+# 全局队列用于存储工具执行状态
+status_queue = queue.Queue()
+
+def on_tool_start(name, args):
+    """工具开始执行时的回调"""
+    global status_queue
+    # 翻译工具名称和参数
+    cn_name = TOOL_TRANSLATIONS.get(name, name)
+    cn_args = []
+    for k, v in args.items():
+        cn_k = ARG_TRANSLATIONS.get(k, k)
+        cn_args.append(f"{cn_k}='{v}'")
+    args_str = ", ".join(cn_args)
+    
+    status_msg = f"正在执行: {cn_name}({args_str})"
+    status_queue.put(status_msg)
+
+# 注册回调
+if agent:
+    agent.on_tool_start = on_tool_start
+
+def run_agent_streaming(prompt, history):
+    """运行Agent并流式更新UI"""
+    # 清空队列
+    while not status_queue.empty():
+        status_queue.get()
+    
+    # 初始状态
+    history.append({"role": "assistant", "content": "正在思考..."})
+    yield history
+
+    # 在线程中运行Agent
+    output_capture = StringIO()
+    
+    def run_agent():
+        # 重定向stdout到StringIO
+        old_stdout = sys.stdout
+        sys.stdout = output_capture
+        try:
+            agent.chat(prompt)
+        except Exception as e:
+            print(f"Error: {e}")
+        finally:
+            sys.stdout = old_stdout
+
+    t = threading.Thread(target=run_agent)
+    t.start()
+
+    # 循环更新UI
+    collected_status = []
+    
+    while t.is_alive():
+        # 检查是否有新状态
+        try:
+            while True:
+                msg = status_queue.get_nowait()
+                collected_status.append(msg)
+        except queue.Empty:
+            pass
+            
+        # 获取当前输出
+        current_out = output_capture.getvalue()
+        
+        # 构建显示内容
+        display_text = ""
+        if current_out:
+            # 尝试提取LLM回复
+            if "<LLM>:" in current_out:
+                llm_part = current_out.split("<LLM>:")[-1].strip()
+                if llm_part:
+                    display_text += llm_part + "\n\n"
+            else:
+                 display_text += current_out + "\n\n"
+
+        if collected_status:
+            display_text += "\n".join(collected_status)
+            
+        if not display_text:
+            display_text = "正在思考..."
+            
+        history[-1] = {"role": "assistant", "content": display_text}
+        yield history
+        time.sleep(0.1)
+        
+    # 线程结束后的最终更新
+    t.join()
+    
+    # 再次检查队列
+    try:
+        while True:
+            msg = status_queue.get_nowait()
+            collected_status.append(msg)
+    except queue.Empty:
+        pass
+
+    final_out = output_capture.getvalue()
+    display_text = ""
+    if final_out:
+        if "<LLM>:" in final_out:
+            llm_part = final_out.split("<LLM>:")[-1].strip()
+            if llm_part:
+                display_text += llm_part + "\n\n"
+        else:
+             display_text += final_out + "\n\n"
+
+    if collected_status:
+        display_text += "\n".join(collected_status)
+        
+    display_text += "\n\n✅ 操作完成"
+    
+    history[-1] = {"role": "assistant", "content": display_text}
+    yield history
+
 def process_text_interaction(text, history):
     """处理文字交互"""
     if not text:
-        return "", history
+        yield "", history
+        return
     
     history = history or []
     history.append({"role": "user", "content": text})
+    yield "", history
     
     if agent is None:
         history.append({"role": "assistant", "content": "❌ Agent未初始化成功，无法处理指令。"})
-        return "", history
+        yield "", history
+        return
 
-    with capture_stdout() as out:
-        try:
-            print(f"<USER>: {text}")
-            agent.chat(text)
-        except Exception as e:
-            print(f"Error during chat: {e}")
-    
-    output = out.getvalue()
-    history.append({"role": "assistant", "content": output})
-    return "", history
+    for updated_history in run_agent_streaming(text, history):
+        yield "", updated_history
 
 def process_voice_interaction(history):
     """处理语音交互：复制文件 -> 识别 -> Agent对话"""
@@ -126,7 +250,8 @@ def process_voice_interaction(history):
     copy_msg = copy_to_recording()
     if "❌" in copy_msg:
         history.append({"role": "assistant", "content": copy_msg})
-        return history, copy_msg
+        yield history
+        return
 
     # 2. 语音识别
     try:
@@ -135,29 +260,24 @@ def process_voice_interaction(history):
     except Exception as e:
         msg = f"语音识别失败: {e}"
         history.append({"role": "assistant", "content": msg})
-        return history, msg
+        yield history
+        return
 
     if not user_input:
-        return history, "语音识别结果为空"
+        yield history
+        return
 
     # 3. Agent对话
     history.append({"role": "user", "content": f"[语音] {user_input}"})
+    yield history
 
     if agent is None:
         history.append({"role": "assistant", "content": "❌ Agent未初始化成功，无法处理指令。"})
-        return history, "Agent未初始化"
+        yield history
+        return
 
-    with capture_stdout() as out:
-        try:
-            agent.chat(user_input)
-        except Exception as e:
-            print(f"Error during chat: {e}")
-            
-    output = out.getvalue()
-    history.append({"role": "assistant", "content": output})
-    
-    return history, f"语音指令已执行: {user_input}"
-
+    for updated_history in run_agent_streaming(user_input, history):
+        yield updated_history
 import global_state
 import time
 
@@ -203,15 +323,17 @@ def get_webcam_frame():
 with gr.Blocks(title="Jetson AI 交互终端", theme=gr.themes.Soft()) as demo:
     gr.Markdown("## 🤖 Jetson AI 交互终端")
     
-    # 1. 摄像头画面
+    # 1. 摄像头画面和交互记录
     with gr.Row():
-        camera_display = gr.Image(label="摄像头画面", height=400, interactive=False, sources=None)
-        # 使用 Timer 定时刷新画面 (每100ms刷新一次，即10fps，避免负载过高)
-        timer = gr.Timer(value=0.1)
-        timer.tick(fn=get_webcam_frame, outputs=camera_display)
+        with gr.Column(scale=1):
+            camera_display = gr.Image(label="摄像头画面", height=400, interactive=False, sources=None)
+            # 使用 Timer 定时刷新画面 (每100ms刷新一次，即10fps，避免负载过高)
+            timer = gr.Timer(value=0.1)
+            timer.tick(fn=get_webcam_frame, outputs=camera_display)
 
-    # 聊天记录显示
-    chatbot = gr.Chatbot(label="交互记录", height=500)
+        with gr.Column(scale=1):
+            # 聊天记录显示
+            chatbot = gr.Chatbot(label="交互记录", height=400)
 
     # 2. 交互区域
     with gr.Row():
@@ -234,24 +356,23 @@ with gr.Blocks(title="Jetson AI 交互终端", theme=gr.themes.Soft()) as demo:
                 format="wav",
                 interactive=True
             )
-            status_display = gr.Textbox(label="状态", value="等待录音...", lines=2)
             # 隐藏的音频播放组件
             audio_output = gr.Audio(label="录音回放", visible=False, interactive=False)
             
-            voice_button = gr.Button("发送语音 (复制到Recording.flac)", variant="primary")
+            voice_button = gr.Button("发送语音 ", variant="primary")
             
             # 录音完成后自动保存
             audio_input.change(
                 fn=save_and_process_audio,
                 inputs=[audio_input],
-                outputs=[status_display, audio_output]
+                outputs=[audio_output]
             )
             
             # 点击按钮执行语音流程
             voice_button.click(
                 fn=process_voice_interaction,
                 inputs=[chatbot],
-                outputs=[chatbot, status_display]
+                outputs=[chatbot]
             )
 
 # 启动应用

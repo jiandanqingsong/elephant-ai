@@ -49,6 +49,7 @@ class ReactAgent:
 
         self.tool_descs_template = '{func_name}: {description_for_func} 输入参数：{parameters}'
         self.model = model
+        self.on_tool_start = None
 
     # 注册工具
     def register_tool(self, name, cls):
@@ -210,6 +211,8 @@ class ReactAgent:
 
                     if fn_name in self.functions:
                         print("#" * 20, "<函数执行>", "#" * 20)
+                        if self.on_tool_start:
+                            self.on_tool_start(fn_name, fn_args)
                         res_func = self.functions[fn_name]['function'](**fn_args)
                         print("#" * 20, "<函数执行>", "#" * 20, '\n')
 

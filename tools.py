@@ -56,10 +56,10 @@ class MoveTo(BaseTool):
         time.sleep(3)
 
         mc.send_coords([target_robot_coord[0], target_robot_coord[1], 180, -175, 0, -45], 40)
-        time.sleep(3)
+        time.sleep(4)
 
         mc.send_coords([target_robot_coord[0], target_robot_coord[1], target_height, -175, 0, -45], 40)
-        time.sleep(3)
+        time.sleep(4)
         init.open_gripper()
         time.sleep(1)
 
