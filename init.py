@@ -68,29 +68,46 @@ def adjust_gamma(image, gamma=1.0):
     table = np.array([((i / 255.0) ** inv_gamma) * 255 for i in np.arange(0, 256)]).astype("uint8")
     return cv2.LUT(image, table)
 
+import global_state
+
 def GetImage():
-    capture = cv2.VideoCapture(0, cv2.CAP_V4L2)
+    # 请求锁定摄像头，通知其他使用者释放资源
+    print("Requesting camera lock...")
+    global_state.camera_locked = True
+    # 等待一段时间，确保Gradio释放摄像头
+    time.sleep(2.0)
+    
+    try:
+        capture = cv2.VideoCapture(0, cv2.CAP_V4L2)
 
-    capture.set(cv2.CAP_PROP_FRAME_WIDTH, 640)  # 设置图像宽度
-    capture.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)  # 设置图像高度
-    #capture.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter.fourcc('M', 'J', 'P', 'G'))
-    index=1
+        capture.set(cv2.CAP_PROP_FRAME_WIDTH, 640)  # 设置图像宽度
+        capture.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)  # 设置图像高度
+        #capture.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter.fourcc('M', 'J', 'P', 'G'))
+        index=1
 
-    if not capture.isOpened():
-        print("Cannot open camera")
-    else:
-        ret, frame = capture.read()
-        if ret:
-            #threshold = config_data.get('threshold', 130)
-            #dp, img = calibration.calibration_map(frame,threshold)
-            #img = calibration.Perspective_transform(dp,img)
-            # 保存图片
-            filename = "captured_image.jpg"
-            cv2.imwrite(filename, frame)
-            print(f"Image saved as {filename}")
+        if not capture.isOpened():
+            print("Cannot open camera")
         else:
-            print("Failed to capture image")
+            # 尝试多读几帧以确保摄像头稳定
+            for _ in range(5):
+                capture.read()
+                
+            ret, frame = capture.read()
+            if ret:
+                #threshold = config_data.get('threshold', 130)
+                #dp, img = calibration.calibration_map(frame,threshold)
+                #img = calibration.Perspective_transform(dp,img)
+                # 保存图片
+                filename = "captured_image.jpg"
+                cv2.imwrite(filename, frame)
+                print(f"Image saved as {filename}")
+            else:
+                print("Failed to capture image")
 
-    # 释放摄像头
-    capture.release()
-    cv2.destroyAllWindows()
+        # 释放摄像头
+        capture.release()
+        cv2.destroyAllWindows()
+    finally:
+        # 无论如何都要释放锁
+        print("Releasing camera lock...")
+        global_state.camera_locked = False

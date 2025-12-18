@@ -1,4 +1,5 @@
 import gradio as gr
+import cv2
 import numpy as np
 import soundfile as sf
 import shutil
@@ -157,13 +158,57 @@ def process_voice_interaction(history):
     
     return history, f"语音指令已执行: {user_input}"
 
+import global_state
+import time
+
+# 全局摄像头对象
+video_cap = None
+last_valid_frame = None
+
+def get_webcam_frame():
+    """获取摄像头当前帧"""
+    global video_cap, last_valid_frame
+    
+    # 1. 检查是否被锁定（Agent正在拍照）
+    if global_state.camera_locked:
+        if video_cap is not None:
+            print("Gradio: 释放摄像头供Agent使用")
+            video_cap.release()
+            video_cap = None
+        # 返回最后一帧以保持画面
+        return last_valid_frame
+        
+    # 2. 如果未锁定且摄像头未打开，尝试打开
+    if video_cap is None:
+        video_cap = cv2.VideoCapture(0, cv2.CAP_V4L2)
+        if not video_cap.isOpened():
+            # 打开失败
+            video_cap = None
+            return last_valid_frame
+    
+    # 3. 读取画面
+    ret, frame = video_cap.read()
+    if not ret:
+        return last_valid_frame
+        
+    # 4. 转换颜色并更新缓存
+    try:
+        frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        last_valid_frame = frame
+        return frame
+    except Exception:
+        return last_valid_frame
+
 # 创建交互界面
 with gr.Blocks(title="Jetson AI 交互终端", theme=gr.themes.Soft()) as demo:
     gr.Markdown("## 🤖 Jetson AI 交互终端")
     
-    # 1. 摄像头画面 (预留)
+    # 1. 摄像头画面
     with gr.Row():
         camera_display = gr.Image(label="摄像头画面", height=400, interactive=False, sources=None)
+        # 使用 Timer 定时刷新画面 (每100ms刷新一次，即10fps，避免负载过高)
+        timer = gr.Timer(value=0.1)
+        timer.tick(fn=get_webcam_frame, outputs=camera_display)
 
     # 聊天记录显示
     chatbot = gr.Chatbot(label="交互记录", height=500)
