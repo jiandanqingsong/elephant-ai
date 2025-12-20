@@ -1,6 +1,7 @@
 import time
 import base64
 import json
+import math
 from PIL import Image
 import api
 from react_agent.tools import BaseTool, register_tool
@@ -21,6 +22,44 @@ def adjust_gamma(image, gamma=1.0):
     inv_gamma = 1.0 / gamma
     table = np.array([((i / 255.0) ** inv_gamma) * 255 for i in np.arange(0, 256)]).astype("uint8")
     return cv2.LUT(image, table)
+
+def get_object_angle(image, box):
+    x1, y1, x2, y2 = box
+    h, w = image.shape[:2]
+    # Clamp coordinates
+    x1 = max(0, min(int(x1), w))
+    y1 = max(0, min(int(y1), h))
+    x2 = max(0, min(int(x2), w))
+    y2 = max(0, min(int(y2), h))
+    
+    roi = image[y1:y2, x1:x2]
+    if roi.size == 0:
+        return 0
+        
+    gray = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
+    # Use Otsu's thresholding
+    _, thresh = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
+    
+    contours, _ = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    if not contours:
+        return 0
+        
+    # Find largest contour
+    c = max(contours, key=cv2.contourArea)
+    rect = cv2.minAreaRect(c)
+    angle = rect[-1]
+    
+    width, height = rect[1]
+    if width < height:
+        angle += 90
+        
+    # Normalize angle to [-90, 90]
+    if angle > 90:
+        angle -= 180
+    elif angle < -90:
+        angle += 180
+        
+    return angle
 
 @register_tool('move_to')
 class MoveTo(BaseTool):
@@ -56,15 +95,15 @@ class MoveTo(BaseTool):
         time.sleep(3)
 
         mc.send_coords([target_robot_coord[0], target_robot_coord[1], 180, -175, 0, -45], 40)
-        time.sleep(4)
+        time.sleep(3)
 
         mc.send_coords([target_robot_coord[0], target_robot_coord[1], target_height, -175, 0, -45], 40)
-        time.sleep(4)
+        time.sleep(3)
         init.open_gripper()
         time.sleep(1)
 
         mc.send_coords([target_robot_coord[0], target_robot_coord[1], 200, -175, 0, -45], 40)
-        time.sleep(3)
+        time.sleep(2)
         mc.send_angles([0, 0, 0, 0, 0, -45], 40)
         time.sleep(1)
 
@@ -197,6 +236,8 @@ class GrabObject(BaseTool):
         x_offset = config_data.get("x", 0)
         y_offset = config_data.get("y", 0)
         z_offset = config_data.get("z", 0)
+        tool_x = config_data.get("tool_x", 0)
+        tool_y = config_data.get("tool_y", 0)
 
         # 只处理positions中的第一个坐标
         if positions:
@@ -207,21 +248,54 @@ class GrabObject(BaseTool):
             target_coord = (center_x / 1000 * width, center_y / 1000 * height)
             robot_coord = eyeonhand.pixel_to_arm(target_coord)
             print("像素坐标 {} 对应的机械臂坐标为: {}".format(target_coord, robot_coord))
+            
+            # Apply global offsets
             robot_coord[0]=robot_coord[0]+x_offset
             robot_coord[1]=robot_coord[1]+y_offset
             if robot_coord[0] >210:
                 robot_coord[0]=robot_coord[0]-5
             z = 120 + z_offset
 
+            # Calculate angle
+            img = cv2.imread('captured_image.jpg')
+            x1 = position['x1'] / 1000 * width
+            y1 = position['y1'] / 1000 * height
+            x2 = position['x2'] / 1000 * width
+            y2 = position['y2'] / 1000 * height
+            angle = get_object_angle(img, (x1, y1, x2, y2))
+            print(f"Object Angle: {angle}")
+            
+            # Map to robot frame
+            # Fixed value was -45 for horizontal objects (angle=0).
+            # Image rotation is inverted relative to robot rotation.
+            rz = -angle - 45
+            print(f"Calculated rz: {rz}")
+
+            # Compensate for tool offset due to rotation
+            # Original calibration assumes rz = -45
+            # New position = Calibrated - (R(rz) - R(-45)) * ToolOffset
+            if tool_x != 0 or tool_y != 0:
+                def rotate_point(x, y, angle_deg):
+                    rad = math.radians(angle_deg)
+                    rx = x * math.cos(rad) - y * math.sin(rad)
+                    ry = x * math.sin(rad) + y * math.cos(rad)
+                    return rx, ry
+
+                dx_base, dy_base = rotate_point(tool_x, tool_y, -45)
+                dx_new, dy_new = rotate_point(tool_x, tool_y, rz)
+                
+                robot_coord[0] -= (dx_new - dx_base)
+                robot_coord[1] -= (dy_new - dy_base)
+                print(f"Applied tool offset compensation. New coord: {robot_coord}")
 
             init.open_gripper()
-            mc.send_coords([robot_coord[0], robot_coord[1], 200, -173, 0, -45], 40)
-            time.sleep(5)
-            mc.send_coords([robot_coord[0], robot_coord[1], z, -173, 0, -45], 40)
-            time.sleep(5)
+            mc.send_coords([robot_coord[0], robot_coord[1], 200, -173, 0, rz], 40)
+            time.sleep(3)
+            mc.send_coords([robot_coord[0], robot_coord[1], z, -173, 0, rz], 40)
+            time.sleep(4)
             init.close_gripper()
 
-            mc.send_coords([robot_coord[0], robot_coord[1], 200, -173, 0, -45], 20)
+            mc.send_coords([robot_coord[0], robot_coord[1], 200, -173, 0, rz], 40)
             time.sleep(3)
             mc.send_angles([0, 0, 0, 0, 0, -45], 40)
         else:

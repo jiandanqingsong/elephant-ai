@@ -28,13 +28,6 @@ try:
     llm = RequestLLM(base_url="https://api.deepseek.com/v1", model_name="deepseek-chat")
     agent = ReactAgent(llm)
 
-    # 注册工具
-    for name, cls in tools_registry.items():
-        agent.register_tool(name, cls)
-
-    # 更新系统prompt
-    agent.update_system_message()
-
     # 加载配置
     try:
         with open("config.json", "r") as config_file:
@@ -42,6 +35,14 @@ try:
     except Exception as e:
         print(f"加载配置文件失败: {e}")
         config_data = {}
+
+    # 注册工具
+    for name, cls in tools_registry.items():
+        agent.register_tool(name, cls)
+
+    # 更新系统prompt
+    agent.update_system_message(config_data)
+
     print("Agent初始化完成")
 except Exception as e:
     print(f"Agent初始化失败: {e}")

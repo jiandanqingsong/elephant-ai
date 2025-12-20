@@ -19,6 +19,8 @@ class ReactAgent:
         # 你是我的机械臂助手，帮我控制一个六关节机械臂。机械臂内置了一些函数，请你根据我的指令和下面要求，输出对应需要执行的函数。
         ## 你拥有如下工具：
         {tool_descs}
+        ## 预定义位置映射（如果用户指令中提到这些位置，请使用对应的坐标）：
+        {location_mappings}
         ## move_to用于将物体放到指定位置形成特定图案，show_object用于展示物体，grab_object用于寻找并抓取指定物体。必须首先使用grab_object工具，接着必须紧跟move_to或show_object工具。
         ## 所有工具一次都只能处理一个物体，因此当需要处理多个物体时，需要重复grab_object和move_to或show_object！
         ## 你可以在回复中插入零次、一次或多次以下命令以调用工具,最后恢复初始位置。如果需要循环，你可以多次调用同一工具；如果命令中需要实现多个功能，你也可以按顺序调用多个工具。工具函数出现的先后顺序，表示执行的先后顺序
@@ -60,7 +62,7 @@ class ReactAgent:
         }
 
     # 更新sys_message
-    def update_system_message(self):
+    def update_system_message(self, config_data=None):
         tool_descs = '\n'.join([
             self.tool_descs_template.format(
                 func_name=name,
@@ -69,12 +71,18 @@ class ReactAgent:
             ) for name, tool in self.functions.items()
         ])
         tool_names = ', '.join(self.functions.keys())
+
+        location_mappings_str = ""
+        if config_data and "location_mapping" in config_data:
+            location_mappings_str = json.dumps(config_data["location_mapping"], ensure_ascii=False, indent=2)
+
         self.model.messages = [
             {
                 'role': 'system',
                 'content': self.FN_CALL_TEMPLATE_ZH.format(
                     tool_descs=tool_descs,
-                    tool_names=tool_names
+                    tool_names=tool_names,
+                    location_mappings=location_mappings_str
                 )
             }
         ]
