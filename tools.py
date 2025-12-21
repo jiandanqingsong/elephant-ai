@@ -37,8 +37,10 @@ def get_object_angle(image, box):
         return 0
         
     gray = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
+    cv2.imwrite('debug_gray.jpg', gray)
     # Use Otsu's thresholding
     _, thresh = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
+    cv2.imwrite('debug_thresh.jpg', thresh)
     
     contours, _ = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
     if not contours:
