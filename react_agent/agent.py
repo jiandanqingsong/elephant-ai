@@ -21,7 +21,7 @@ class ReactAgent:
         {tool_descs}
         ## 预定义位置映射（如果用户指令中提到这些位置，请使用对应的坐标）：
         {location_mappings}
-        ## move_to用于将物体放到指定位置形成特定图案，show_object用于展示物体，grab_object用于寻找并抓取指定物体。必须首先使用grab_object工具，接着必须紧跟move_to或show_object工具。
+        ## move_to用于将物体放到指定位置形成特定图案或放入指定垃圾桶，show_object用于展示物体，grab_object用于寻找并抓取指定物体。必须首先使用grab_object工具，接着必须紧跟move_to或show_object工具。
         ## 所有工具一次都只能处理一个物体，因此当需要处理多个物体时，需要重复grab_object和move_to或show_object！
         ## 你可以在回复中插入零次、一次或多次以下命令以调用工具,最后恢复初始位置。如果需要循环，你可以多次调用同一工具；如果命令中需要实现多个功能，你也可以按顺序调用多个工具。工具函数出现的先后顺序，表示执行的先后顺序
         ## 这里有一些例子：
@@ -34,9 +34,16 @@ class ReactAgent:
 ✿ARGS✿: {{"object_name": "红色方块"}}
 ✿ARGS✿: {{"object_name": "红色方块"}}
 ✿ARGS✿: {{"object_name": "红色方块"}}
-✿ARGS✿: {{"target_coord": [-80,200]}}
+✿ARGS✿: {{"target_coord": [-80,200], "target_height": 110}}
 ”；因为我需要两个红色方块，所以你需要连续执行grab_object两次，第一次用show_object展示给我，第二次用Move_to移动到指定位置。其他指令的逻辑也类似
-二：我的指令：“用八个方块组成一个圆形,用代码计算精确坐标”。
+            二：我的指令：“对鱼骨进行分类，将其放入厨余垃圾”。
+            你输出：“
+✿FUNCTION✿: grab_object
+✿FUNCTION✿: move_to
+✿ARGS✿: {{"object_name": "鱼骨"}}
+✿ARGS✿: {{"target_coord": [70, 155], "target_height": 110}}
+”；这里“厨余垃圾”对应的坐标从预定义位置映射中查找。
+        三：我的指令：“用八个方块组成一个圆形,用代码计算精确坐标”。
 这里,指令中明确要求了指定的图形，并且要求用代码计算坐标。因此首先你需要编写一段完整的python代码，需要可以直接运行并返回坐标结果，根据指令中要求的图案，计算出精确的各个点的坐标。所有点的X坐标范围是-70至140，Y坐标范围是150到280，"相邻两点之间的距离不小于50"，绝对不可以超出范围！要求结果必须存在全局变量global Result中！然后等待我帮你执行代码获取结果，接着根据我给你的结果给出工具参数。
         #只需要在指令中明确要求编写代码时，再使用代码计算坐标！代码要放到字符串“```python”和“```”中间以方便提取。
         %s: 工具名称，如果使用工具则必须是[{tool_names}]之一，工具的名称不得修改或翻译！
@@ -52,6 +59,7 @@ class ReactAgent:
         self.tool_descs_template = '{func_name}: {description_for_func} 输入参数：{parameters}'
         self.model = model
         self.on_tool_start = None
+        self.config_data = {}
 
     # 注册工具
     def register_tool(self, name, cls):
@@ -63,6 +71,7 @@ class ReactAgent:
 
     # 更新sys_message
     def update_system_message(self, config_data=None):
+        self.config_data = config_data or {}
         tool_descs = '\n'.join([
             self.tool_descs_template.format(
                 func_name=name,
@@ -164,6 +173,33 @@ class ReactAgent:
 
     # 对话
     def chat(self, prompt):
+        # 垃圾分类指令预处理
+        if "分类" in prompt:
+            classify_prompt = f"请分析用户指令：'{prompt}'。提取出需要分类的物体名称，并判断它属于哪种垃圾（可回收物、有害垃圾、厨余垃圾、其他垃圾）。请仅按以下格式回复：物体: [名称], 类别: [类别]。例如：物体: 鱼骨, 类别: 厨余垃圾。"
+            try:
+                temp_messages = [
+                    {"role": "system", "content": "你是一个垃圾分类专家。"},
+                    {"role": "user", "content": classify_prompt}
+                ]
+                response = self.model.client.chat.completions.create(
+                    model=self.model.model_name,
+                    messages=temp_messages,
+                    stream=False
+                )
+                result = response.choices[0].message.content
+                print(f"Classification expansion result: {result}")
+                
+                match = re.search(r"物体:\s*(.*?),\s*类别:\s*(.*)", result)
+                if match:
+                    obj_name = match.group(1).strip()
+                    category = match.group(2).strip().replace("。", "").replace(".", "")
+                    # 检查类别是否在配置中
+                    if category in self.config_data.get("location_mapping", {}):
+                        prompt = f"对{obj_name}进行分类，将其放入{category}"
+                        print(f"Expanded prompt: {prompt}")
+            except Exception as e:
+                print(f"Error during classification expansion: {e}")
+
         response = self.model.chat_nostream(
              prompt=prompt,
              stop=self.FN_STOP_WORDS
